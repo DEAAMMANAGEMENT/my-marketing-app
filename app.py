@@ -5,91 +5,124 @@ import math
 import zipfile
 import datetime
 
-st.set_page_config(page_title="Marketing Master Pro", layout="wide")
+# --- PAGE SETUP ---
+st.set_page_config(page_title="AdGen Pro", layout="wide")
 
-# --- SIDEBAR SETTINGS ---
-st.sidebar.header("📐 Layout & Design")
-target = st.sidebar.radio("Platform", ["Square (FB/Carousell)", "Vertical (TikTok/Story)"])
-imgs_per_set = st.sidebar.slider("Images per Collage", 1, 20, 4)
-bg_style = st.sidebar.selectbox("Background Color", ["Plain White", "Soft Gray", "Brand Color"])
-add_shadow = st.sidebar.checkbox("Add 3D Shadow", value=True)
+# --- UI STYLING ---
+st.markdown("""
+    <style>
+    /* Big Colorful Buttons */
+    .stButton > button {
+        width: 100%;
+        border-radius: 12px;
+        height: 3em;
+        font-size: 18px !important;
+        font-weight: bold !important;
+        text-transform: uppercase;
+    }
+    /* Upload Box Styling */
+    [data-testid="stFileUploader"] {
+        background-color: #f0f2f6;
+        border-radius: 15px;
+        padding: 10px;
+    }
+    /* Step Headers */
+    .step-header {
+        font-size: 24px;
+        font-weight: bold;
+        color: #FF4B2B;
+        margin-bottom: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-st.sidebar.header("✂️ Cleanup & Branding")
-crop_val = st.sidebar.slider("Remove Bookmarks %", 0, 25, 8)
-brand_color = st.sidebar.color_picker("Accent Color", "#FF0000")
-brand_handle = st.sidebar.text_input("Social Handle", "@MyStore")
-property_address = st.sidebar.text_input("Property Address", "Enter Address Here")
-
-def apply_shadow(img, background_color):
-    shadow_canvas = Image.new('RGB', (img.width + 60, img.height + 60), background_color)
-    shadow_mask = Image.new('L', img.size, 110)
-    shadow_canvas.paste((30, 30, 30), (30, 30), mask=shadow_mask)
-    shadow_canvas = shadow_canvas.filter(ImageFilter.GaussianBlur(18))
-    shadow_canvas.paste(img, (20, 20))
-    return shadow_canvas
-
+# --- IMAGE ENGINE ---
 def create_ad(batch, batch_idx, settings):
     c_w, c_h = settings['size']
     footer_h = settings['footer']
-    bg_color = (255, 255, 255)
-    if settings['bg_style'] == "Soft Gray": bg_color = (238, 238, 238)
-    if settings['bg_style'] == "Brand Color": bg_color = settings['color']
-    canvas = Image.new('RGB', (c_w, c_h), bg_color)
+    canvas = Image.new('RGB', (c_w, c_h), "white")
     draw = ImageDraw.Draw(canvas)
+    
     num_imgs = len(batch)
     cols = math.ceil(math.sqrt(num_imgs))
     rows = math.ceil(num_imgs / cols)
-    cell_w, cell_h = c_w // cols, (c_h - footer_h - 120) // rows 
+    
+    available_h = c_h - footer_h - 150
+    cell_w, cell_h = c_w // cols, available_h // rows 
 
     for i, f in enumerate(batch):
         img = Image.open(f).convert("RGB")
         w, h = img.size
         cut = (settings['crop'] / 100) * h
         img = img.crop((0, cut, w, h - cut))
-        padding = 100 if num_imgs == 1 else 40
-        img.thumbnail((cell_w - padding, cell_h - padding), Image.Resampling.LANCZOS)
-        if settings['shadow'] and num_imgs <= 4:
-            img = apply_shadow(img, bg_color)
+        img.thumbnail((cell_w - 40, cell_h - 40), Image.Resampling.LANCZOS)
+        
         pos_x = (i % cols) * cell_w + (cell_w - img.width) // 2
-        pos_y = (i // cols) * cell_h + (cell_h - img.height) // 2
+        pos_y = 50 + (i // cols) * cell_h + (cell_h - img.height) // 2
         canvas.paste(img, (int(pos_x), int(pos_y)))
+        
+        # Number Circle
         item_id = batch_idx * settings['per_set'] + i + 1
-        draw.rectangle([pos_x, pos_y, pos_x+55, pos_y+55], fill="black")
+        draw.ellipse([pos_x, pos_y, pos_x+50, pos_y+50], fill="black")
         draw.text((pos_x+18, pos_y+15), str(item_id), fill="white")
 
-    text_color = "black" if settings['bg_style'] != "Brand Color" else "white"
-    address_line = f"Address: {settings['address']}"
-    draw.text((40, c_h - footer_h - 80), address_line, fill=text_color)
-    commission_phrase = "Commission payable to our salesperson pertaining to the rental of the above mentioned premises."
-    draw.text((40, c_h - footer_h - 45), commission_phrase, fill=text_color)
-    draw.text((c_w // 2 - 120, c_h - (footer_h // 2)), f"DM TO ORDER {settings['handle']}", fill=settings['color'])
+    # Footer
+    draw.rectangle([0, c_h - footer_h, c_w, c_h], fill=settings['color'])
+    draw.text((60, c_h - footer_h - 80), f"📍 {settings['address'].upper()}", fill="black")
+    draw.text((c_w // 2 - 130, c_h - (footer_h // 2) - 10), f"DM TO ORDER: {settings['handle']}", fill="white")
     return canvas
 
-uploaded_files = st.file_uploader("Upload Photos", accept_multiple_files=True)
+# --- NAVIGATION FLOW ---
+st.title("🏡 Property Ad Creator")
 
+# STEP 1: SIDEBAR SETUP
+with st.sidebar:
+    st.header("⚙️ 1. SETUP DETAILS")
+    brand_handle = st.text_input("Your Social Name", "@DEAAM")
+    prop_addr = st.text_input("Property Name/Address", "Orchard Road")
+    brand_color = st.color_picker("Choose Theme Color", "#007AFF")
+    
+    st.divider()
+    st.header("📐 2. LAYOUT")
+    target = st.selectbox("Where will you post?", ["Instagram/Facebook", "TikTok/Stories"])
+    imgs_per_set = st.slider("Photos per ad", 1, 9, 4)
+    
+    if st.button("🔄 Start New Project"):
+        st.rerun()
+
+# STEP 2 & 3: MAIN AREA
+col1, col2 = st.columns([1, 1])
+
+with col1:
+    st.markdown('<p class="step-header">📸 STEP 1: ADD PHOTOS</p>', unsafe_allow_html=True)
+    uploaded_files = st.file_uploader("Tap here to select photos from your phone", accept_multiple_files=True)
+
+with col2:
+    st.markdown('<p class="step-header">📦 STEP 2: GET RESULTS</p>', unsafe_allow_html=True)
+    if uploaded_files:
+        settings = {
+            'size': (1080, 1080) if "Instagram" in target else (1080, 1920),
+            'footer': 120 if "Instagram" in target else 250,
+            'crop': 8, 'handle': brand_handle, 'color': brand_color,
+            'per_set': imgs_per_set, 'address': prop_addr
+        }
+        
+        # PROMINENT DOWNLOAD BUTTON
+        if st.button("🎨 CREATE MY ADS NOW"):
+            batches = [uploaded_files[i:i + imgs_per_set] for i in range(0, len(uploaded_files), imgs_per_set)]
+            zip_buf = io.BytesIO()
+            with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_file:
+                for idx, batch in enumerate(batches):
+                    img = create_ad(batch, idx, settings)
+                    buf = io.BytesIO()
+                    img.save(buf, format='JPEG', quality=85)
+                    zip_file.writestr(f"property_ad_{idx+1}.jpg", buf.getvalue())
+            
+            st.success(f"Done! {len(batches)} Ads Created.")
+            st.download_button("📥 DOWNLOAD ALL (ZIP FILE)", zip_buf.getvalue(), "my_property_ads.zip")
+
+# PREVIEW
 if uploaded_files:
-    settings = {
-        'size': (1080, 1080) if "Square" in target else (1080, 1920),
-        'footer': 160 if "Square" in target else 400,
-        'crop': crop_val,
-        'handle': brand_handle,
-        'color': brand_color,
-        'per_set': imgs_per_set,
-        'bg_style': bg_style,
-        'shadow': add_shadow,
-        'address': property_address
-    }
-    st.subheader("🖼️ Ad Preview")
+    st.divider()
+    st.subheader("👀 Preview of your first ad:")
     st.image(create_ad(uploaded_files[:imgs_per_set], 0, settings), use_container_width=True)
-
-    if st.button("Generate & Download All"):
-        date_str = datetime.datetime.now().strftime("%Y-%m-%d")
-        batches = [uploaded_files[i:i + imgs_per_set] for i in range(0, len(uploaded_files), imgs_per_set)]
-        zip_buf = io.BytesIO()
-        with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_file:
-            for idx, batch in enumerate(batches):
-                img = create_ad(batch, idx, settings)
-                buf = io.BytesIO()
-                img.save(buf, format='JPEG', quality=95)
-                zip_file.writestr(f"ad_{date_str}_{idx+1}.jpg", buf.getvalue())
-        st.download_button("📥 Save All as ZIP", zip_buf.getvalue(), f"marketing_pack_{date_str}.zip")
