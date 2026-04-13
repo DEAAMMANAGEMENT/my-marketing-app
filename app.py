@@ -18,8 +18,6 @@ st.sidebar.header("✂️ Cleanup & Branding")
 crop_val = st.sidebar.slider("Remove Bookmarks %", 0, 25, 8)
 brand_color = st.sidebar.color_picker("Accent Color", "#FF0000")
 brand_handle = st.sidebar.text_input("Social Handle", "@MyStore")
-
-# Address Input for the legal text
 property_address = st.sidebar.text_input("Property Address", "Enter Address Here")
 
 def apply_shadow(img, background_color):
@@ -33,14 +31,11 @@ def apply_shadow(img, background_color):
 def create_ad(batch, batch_idx, settings):
     c_w, c_h = settings['size']
     footer_h = settings['footer']
-    
     bg_color = (255, 255, 255)
     if settings['bg_style'] == "Soft Gray": bg_color = (238, 238, 238)
     if settings['bg_style'] == "Brand Color": bg_color = settings['color']
-    
     canvas = Image.new('RGB', (c_w, c_h), bg_color)
     draw = ImageDraw.Draw(canvas)
-    
     num_imgs = len(batch)
     cols = math.ceil(math.sqrt(num_imgs))
     rows = math.ceil(num_imgs / cols)
@@ -51,40 +46,25 @@ def create_ad(batch, batch_idx, settings):
         w, h = img.size
         cut = (settings['crop'] / 100) * h
         img = img.crop((0, cut, w, h - cut))
-        
         padding = 100 if num_imgs == 1 else 40
         img.thumbnail((cell_w - padding, cell_h - padding), Image.Resampling.LANCZOS)
-        
         if settings['shadow'] and num_imgs <= 4:
             img = apply_shadow(img, bg_color)
-        
         pos_x = (i % cols) * cell_w + (cell_w - img.width) // 2
         pos_y = (i // cols) * cell_h + (cell_h - img.height) // 2
-        
         canvas.paste(img, (int(pos_x), int(pos_y)))
-        
-        # Item Numbering
         item_id = batch_idx * settings['per_set'] + i + 1
         draw.rectangle([pos_x, pos_y, pos_x+55, pos_y+55], fill="black")
         draw.text((pos_x+18, pos_y+15), str(item_id), fill="white")
 
-    # --- COMMISSION & ADDRESS TEXT ---
-    text_color = "black" if bg_style != "Brand Color" else "white"
-    
-    # Address Line
+    text_color = "black" if settings['bg_style'] != "Brand Color" else "white"
     address_line = f"Address: {settings['address']}"
     draw.text((40, c_h - footer_h - 80), address_line, fill=text_color)
-    
-    # Commission Phrase
     commission_phrase = "Commission payable to our salesperson pertaining to the rental of the above mentioned premises."
     draw.text((40, c_h - footer_h - 45), commission_phrase, fill=text_color)
-    
-    # Main CTA
     draw.text((c_w // 2 - 120, c_h - (footer_h // 2)), f"DM TO ORDER {settings['handle']}", fill=settings['color'])
-    
     return canvas
 
-# --- INTERFACE ---
 uploaded_files = st.file_uploader("Upload Photos", accept_multiple_files=True)
 
 if uploaded_files:
@@ -99,7 +79,6 @@ if uploaded_files:
         'shadow': add_shadow,
         'address': property_address
     }
-    
     st.subheader("🖼️ Ad Preview")
     st.image(create_ad(uploaded_files[:imgs_per_set], 0, settings), use_container_width=True)
 
@@ -107,4 +86,10 @@ if uploaded_files:
         date_str = datetime.datetime.now().strftime("%Y-%m-%d")
         batches = [uploaded_files[i:i + imgs_per_set] for i in range(0, len(uploaded_files), imgs_per_set)]
         zip_buf = io.BytesIO()
-        with zipfile.ZipFile(zip_buf, "
+        with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_file:
+            for idx, batch in enumerate(batches):
+                img = create_ad(batch, idx, settings)
+                buf = io.BytesIO()
+                img.save(buf, format='JPEG', quality=95)
+                zip_file.writestr(f"ad_{date_str}_{idx+1}.jpg", buf.getvalue())
+        st.download_button("📥 Save All as ZIP", zip_buf.getvalue(), f"marketing_pack_{date_str}.zip")
