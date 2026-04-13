@@ -1,135 +1,126 @@
 import streamlit as st
-from PIL import Image, ImageDraw, ImageOps, ImageFont
+from PIL import Image, ImageDraw, ImageOps
 import io
 import math
 import zipfile
 
-# --- PRO UI ---
+# --- UI STYLE ---
 st.set_page_config(page_title="AD Creator Pro", layout="wide")
-
 st.markdown("""
     <style>
-    .main { background-color: #f0f2f5; }
+    .main { background-color: #f8f9fa; }
     .stButton>button {
-        background: linear-gradient(45deg, #1a1a1a, #4a4a4a);
-        color: white; border-radius: 5px; height: 3.5em; width: 100%; border: none;
-        letter-spacing: 1px; font-weight: bold;
+        background: linear-gradient(90deg, #1a1a1a 0%, #434343 100%);
+        color: white; border: none; border-radius: 8px; height: 3.5em; width: 100%; font-weight: bold;
     }
-    [data-testid="stSidebar"] { background-color: #ffffff; }
+    [data-testid="stSidebar"] { background-color: white; border-right: 1px solid #eee; }
     </style>
     """, unsafe_allow_html=True)
 
-def process_and_crop(file, c_h, c_w, target_ratio=(1,1)):
-    """Processes image and crops to a specific ratio for a clean grid"""
-    img = Image.open(file)
-    img = ImageOps.exif_transpose(img).convert("RGB")
-    
-    # Initial watermark crop
-    w, h = img.size
-    ch_px, cw_px = int(h * (c_h / 100)), int(w * (c_w / 100))
-    img = img.crop((cw_px, ch_px, w - cw_px, h - ch_px))
-    
-    # Force aspect ratio (Square crop for the grid)
-    w, h = img.size
-    target_w, target_h = target_ratio
-    current_ratio = w / h
-    target_ratio_val = target_w / target_h
-    
-    if current_ratio > target_ratio_val:
-        new_w = int(target_ratio_val * h)
-        offset = (w - new_w) // 2
-        img = img.crop((offset, 0, offset + new_w, h))
-    else:
-        new_h = int(w / target_ratio_val)
-        offset = (h - new_h) // 2
-        img = img.crop((0, offset, w, offset + new_h))
-        
-    img.thumbnail((800, 800), Image.Resampling.LANCZOS)
-    return img
+# --- IMAGE ENGINE ---
+def safe_process(file, c_h, c_w):
+    try:
+        img = Image.open(file)
+        img = ImageOps.exif_transpose(img).convert("RGB")
+        w, h = img.size
+        # Watermark crop
+        ch_px, cw_px = int(h * (c_h / 100)), int(w * (c_w / 100))
+        img = img.crop((cw_px, ch_px, w - cw_px, h - ch_px))
+        # Center Crop to Square for professional look
+        w, h = img.size
+        min_dim = min(w, h)
+        img = img.crop(((w - min_dim)//2, (h - min_dim)//2, (w + min_dim)//2, (h + min_dim)//2))
+        img.thumbnail((800, 800), Image.Resampling.LANCZOS)
+        return img
+    except:
+        return None
 
-def build_luxury_ad(batch, settings):
+def build_pro_ad(batch, settings):
+    if not batch: return None
+    
     canvas_w, canvas_h = settings['size']
     footer_h = settings['footer']
-    canvas = Image.new('RGB', (canvas_w, canvas_h), "#FFFFFF")
+    canvas = Image.new('RGB', (canvas_w, canvas_h), "white")
     draw = ImageDraw.Draw(canvas)
     
     num = len(batch)
     cols = 2 if num > 1 else 1
     rows = math.ceil(num / cols)
     
-    # Grid Math
-    gap = 20
+    gap = 24
     grid_w = canvas_w - (gap * (cols + 1))
-    grid_h = (canvas_h - footer_h) - (gap * (rows + 1))
+    grid_h = (canvas_h - footer_h - 60) - (gap * (rows + 1))
     
-    cell_w = grid_w // cols
-    cell_h = grid_h // rows
+    cell_w, cell_h = grid_w // cols, grid_h // rows
 
     for i, img in enumerate(batch):
-        # Resize to fit cell exactly
-        img_fit = img.resize((cell_w, cell_h), Image.Resampling.LANCZOS)
-        
+        if img is None: continue
+        img_res = img.resize((cell_w, cell_h), Image.Resampling.LANCZOS)
         x = gap + (i % cols) * (cell_w + gap)
-        y = gap + (i // cols) * (cell_h + gap)
-        canvas.paste(img_fit, (x, y))
+        y = gap + (i // cols) * (cell_h + gap) + 40 # Offset for top margin
+        canvas.paste(img_res, (x, y))
         
-        # Subtle Number Badge
-        badge_size = 40
-        draw.rectangle([x, y, x + badge_size, y + badge_size], fill="#1a1a1a")
-        draw.text((x + 15, y + 12), str(i+1), fill="white")
+        # ID Circle
+        draw.ellipse([x+10, y+10, x+50, y+50], fill="black")
+        draw.text((x+22, y+18), str(i+1), fill="white")
 
-    # High-End Footer
-    f_start_y = canvas_h - footer_h
-    draw.rectangle([0, f_start_y, canvas_w, canvas_h], fill=settings['color'])
-    
-    # Text with padding
-    draw.text((40, f_start_y + 20), f"PREMISES: {settings['addr'].upper()}", fill="white")
-    draw.text((40, f_start_y + 50), "REGISTER YOUR INTEREST BELOW", fill="rgba(255,255,255,0.7)")
-    draw.text((canvas_w - 300, f_start_y + 35), f"CONTACT: {settings['handle']}", fill="white")
+    # Footer
+    f_y = canvas_h - footer_h
+    draw.rectangle([0, f_y, canvas_w, canvas_h], fill=settings['color'])
+    draw.text((40, f_y + 25), f"PROPERTY: {settings['addr'].upper()}", fill="white")
+    draw.text((canvas_w - 300, f_y + 25), f"INQUIRY: {settings['handle']}", fill="white")
     
     return canvas
 
-# --- APP ---
+# --- INTERFACE ---
 st.title("🏙️ AD Creator Pro")
 
 with st.sidebar:
-    st.header("Brand Style")
-    handle = st.text_input("Agent/Handle", "@DEAAM")
-    addr = st.text_input("Property Name", "Skyline Apartment")
-    accent = st.color_picker("Accent Color", "#1A1A1A")
-    
+    st.header("Settings")
+    handle = st.text_input("Contact Handle", "@DEAAM")
+    addr = st.text_input("Location", "Singapore")
+    accent = st.color_picker("Brand Color", "#1a1a1a")
     st.divider()
-    st.header("Cleanup")
-    c_h = st.slider("Crop Height %", 0, 30, 10)
-    c_w = st.slider("Crop Width %", 0, 30, 0)
-    
+    c_h = st.slider("Remove Top/Bottom %", 0, 30, 10)
+    c_w = st.slider("Remove Sides %", 0, 30, 0)
     st.divider()
-    mode = st.radio("Size", ["Square (Post)", "Vertical (Story)"])
-    per_ad = st.slider("Photos per grid", 1, 6, 4)
+    mode = st.radio("Size", ["Square", "Vertical"])
+    per_ad = st.slider("Photos per ad", 1, 6, 4)
 
 files = st.file_uploader("Upload HQ Photos", accept_multiple_files=True)
 
 if files:
-    with st.spinner("Refining images..."):
-        imgs = [process_and_crop(f, c_h, c_w) for f in files]
+    # 1. Process
+    with st.spinner("Preparing..."):
+        imgs = [safe_process(f, c_h, c_w) for f in files]
+        imgs = [i for i in imgs if i is not None] # Remove any errors
 
-    settings = {
-        'size': (1080, 1080) if "Square" in mode else (1080, 1920),
-        'footer': 120 if "Square" in mode else 220,
-        'handle': handle, 'addr': addr, 'color': accent, 'per_set': per_ad
-    }
+    if imgs:
+        settings = {
+            'size': (1080, 1080) if mode == "Square" else (1080, 1920),
+            'footer': 100 if mode == "Square" else 180,
+            'handle': handle, 'addr': addr, 'color': accent, 'per_set': per_ad
+        }
 
-    if st.button("✨ GENERATE LUXURY PACKAGE"):
-        zip_io = io.BytesIO()
-        with zipfile.ZipFile(zip_io, 'w') as zf:
-            batches = [imgs[i:i + per_ad] for i in range(0, len(imgs), per_ad)]
-            for idx, b in enumerate(batches):
-                ad = build_luxury_ad(b, settings)
-                buf = io.BytesIO()
-                ad.save(buf, format="JPEG", quality=95)
-                zf.writestr(f"marketing_ad_{idx+1}.jpg", buf.getvalue())
-        st.download_button("📥 DOWNLOAD ZIP", zip_io.getvalue(), "pro_ads.zip")
+        # 2. Actions
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✨ GENERATE ALL"):
+                zip_io = io.BytesIO()
+                with zipfile.ZipFile(zip_io, 'w') as zf:
+                    batches = [imgs[i:i + per_ad] for i in range(0, len(imgs), per_ad)]
+                    for idx, b in enumerate(batches):
+                        ad = build_pro_ad(b, settings)
+                        buf = io.BytesIO()
+                        ad.save(buf, format="JPEG", quality=95)
+                        zf.writestr(f"ad_{idx+1}.jpg", buf.getvalue())
+                st.download_button("📥 DOWNLOAD ZIP", zip_io.getvalue(), "property_ads.zip")
 
-    st.divider()
-    st.subheader("Live Result Preview")
-    st.image(build_luxury_ad(imgs[:per_ad], settings), use_container_width=True)
+        # 3. Preview
+        st.divider()
+        st.subheader("Design Preview")
+        preview = build_pro_ad(imgs[:per_ad], settings)
+        if preview:
+            st.image(preview, use_container_width=True)
+else:
+    st.info("Upload photos to begin. Your ads will appear here.")
